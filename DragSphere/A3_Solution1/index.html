@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Bug Zapper - Assignment 3</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        canvas {
+            border: 1px solid #333;
+            margin: 20px 0;
+            background-color: #fff;
+        }
+        h1 {
+            color: #333;
+            margin-top: 20px;
+        }
+        .info {
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 16px;
+        }
+        #webgl-error {
+            color: red;
+            font-weight: bold;
+            display: none;
+            margin: 20px;
+            padding: 10px;
+            border: 1px solid red;
+            background-color: #ffeeee;
+        }
+    </style>
+</head>
+<body>
+    <h1>Super Bug Zapper</h1>
+    <div class="info">Click and drag to rotate the sphere</div>
+    <div id="webgl-error">
+        Your browser does not support WebGL or it is disabled. 
+        Please try a different browser or enable WebGL.
+    </div>
+    <canvas id="webgl" width="600" height="600">
+        Please use a browser that supports "canvas"
+    </canvas>
+
+    <!-- WebGL support check -->
+    <script>
+        // Check for WebGL support before loading other scripts
+        window.addEventListener('load', function() {
+            var canvas = document.getElementById('webgl');
+            var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) {
+                document.getElementById('webgl-error').style.display = 'block';
+                canvas.style.display = 'none';
+            }
+        });
+    </script>
+
+<!-- index.html 中的正确路径 -->
+<script src="../lib/webgl-utils.js"></script>
+<script src="../lib/webgl-debug.js"></script>
+<script src="../lib/cuon-utils.js"></script>
+<script src="../lib/cuon-matrix.js"></script>
+    
+    <!-- Include our main application script -->
+    <script src="main.js"></script>
+</body>
+</html>
