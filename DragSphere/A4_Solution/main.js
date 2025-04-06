@@ -65,7 +65,7 @@ var gameResult = ""; // 游戏结果信息
 
 // 得分系数调整 - 平衡玩家和游戏得分
 var PLAYER_SCORE_MULTIPLIER = 4.0; // 玩家得分系数增加
-var GAME_SCORE_MULTIPLIER = 0.2;   // 游戏得分系数降低
+var GAME_SCORE_MULTIPLIER = 1.7;   // 游戏得分系数降低
 
 // 在全局变量区域添加
 var destroyedBacteriaCount = 0; // 已消灭的细菌数量
@@ -621,7 +621,7 @@ function updateBacteria() {
           thresholdReachedCount++;
           
           // 细菌达到阈值时增加游戏得分
-          gameScore += 20 * GAME_SCORE_MULTIPLIER;
+          gameScore += 70 * GAME_SCORE_MULTIPLIER;
           console.log("细菌", i, "达到阈值，游戏得分+", (20 * GAME_SCORE_MULTIPLIER));
           console.log("当前达到阈值的细菌数量:", thresholdReachedCount);
           
