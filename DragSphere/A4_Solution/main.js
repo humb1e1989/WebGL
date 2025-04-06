@@ -43,6 +43,13 @@ var currentAngle = [0.0, 0.0]; // [x-axis, y-axis] in degrees
 // 网格密度控制
 var GRID_DENSITY = 2; // 值越小，网格越密集(1=最密，3=原始密度)
 
+// 细菌相关变量
+var bacteria = []; // 存储所有细菌的数组
+var maxBacteriaCount = 10; // 最大细菌数量
+var bacteriaGrowthSpeed = 0.002; // 细菌生长速度 (弧度/帧)
+var bacteriaMaxSize = Math.PI/6; // 细菌最大尺寸 (30度弧对应的弧度)
+var bacteriaGenProbability = 0.01; // 每帧生成新细菌的概率
+
 // Debug helper function
 function logError(message) {
   console.error(message);
@@ -63,7 +70,8 @@ function main() {
   console.log("Canvas element found");
   
   // Get the rendering context with explicit fallbacks
-  gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  gl = canvas.getContext('webgl', {preserveDrawingBuffer: true}) || 
+      canvas.getContext('experimental-webgl', {preserveDrawingBuffer: true});
   if (!gl) {
     logError('Failed to get WebGL context. Your browser may not support WebGL.');
     return;
@@ -104,6 +112,9 @@ function main() {
   // Register mouse event handlers
   initEventHandlers();
   console.log("Event handlers initialized");
+  
+  // 创建初始细菌
+  createNewBacterium();
   
   // Start drawing
   tick();
@@ -318,8 +329,200 @@ function initEventHandlers() {
   };
 }
 
+// 细菌对象构造函数
+function Bacterium(position, color) {
+  this.position = position; // 在球面上的位置 (球坐标系)
+  this.color = color; // 颜色 RGB 数组
+  this.size = 0.05; // 初始大小 (弧度)
+  this.active = true; // 是否活跃
+}
+
+// 生成随机颜色
+function getRandomColor() {
+  // 避免太暗或者太亮的颜色
+  var r = 0.3 + Math.random() * 0.7;
+  var g = 0.3 + Math.random() * 0.7;
+  var b = 0.3 + Math.random() * 0.7;
+  return [r, g, b];
+}
+
+// 在球面上生成随机位置
+function getRandomSpherePosition() {
+  // 生成随机球面坐标
+  var theta = Math.random() * Math.PI; // 纬度 (0-π)
+  var phi = Math.random() * 2 * Math.PI; // 经度 (0-2π)
+  return { theta: theta, phi: phi };
+}
+
+// 创建新细菌
+function createNewBacterium() {
+  if (bacteria.length < maxBacteriaCount) {
+    var position = getRandomSpherePosition();
+    var color = getRandomColor();
+    bacteria.push(new Bacterium(position, color));
+    console.log("创建新细菌，位置:", position, "颜色:", color);
+  }
+}
+
+// 更新细菌状态
+function updateBacteria() {
+  for (var i = 0; i < bacteria.length; i++) {
+    if (bacteria[i].active) {
+      // 增加细菌大小
+      bacteria[i].size += bacteriaGrowthSpeed;
+      
+      // 检查是否达到最大尺寸
+      if (bacteria[i].size > bacteriaMaxSize) {
+        // 后续会用于游戏逻辑，目前让它保持在最大尺寸
+        bacteria[i].size = bacteriaMaxSize;
+      }
+    }
+  }
+}
+
+// 将球面坐标转换为笛卡尔坐标
+function sphereToCartesian(theta, phi, radius) {
+  var x = radius * Math.sin(theta) * Math.cos(phi);
+  var y = radius * Math.cos(theta);
+  var z = radius * Math.sin(theta) * Math.sin(phi);
+  return [x, y, z];
+}
+
+// 绘制细菌 - 改进版
+function drawBacteria() {
+  // 临时禁用深度测试，确保后出现的细菌覆盖先出现的
+  gl.disable(gl.DEPTH_TEST);
+  
+  // 按照出现顺序绘制细菌（数组中后面的会覆盖前面的）
+  for (var i = 0; i < bacteria.length; i++) {
+    if (bacteria[i].active) {
+      var bacteriaVertices = [];
+      var bacteriaColors = [];
+      var bacteriaIndices = [];
+      
+      var center = bacteria[i].position;
+      var color = bacteria[i].color;
+      var size = bacteria[i].size;
+      
+      // 中心点坐标
+      var centerTheta = center.theta;
+      var centerPhi = center.phi;
+      var centerCartesian = sphereToCartesian(centerTheta, centerPhi, SPHERE_RADIUS + 0.01);
+      
+      // 创建一个表示细菌的圆形区域
+      // 使用改进的方法计算球面上的圆
+      
+      // 计算正交基 - 使用切平面上的正交向量
+      // 首先根据球面坐标计算法向量 (也是中心点的单位向量)
+      var normal = [
+        Math.sin(centerTheta) * Math.cos(centerPhi),
+        Math.cos(centerTheta),
+        Math.sin(centerTheta) * Math.sin(centerPhi)
+      ];
+      
+      // 计算第一个正交向量 (沿着经度方向的切线)
+      var tangent1 = [
+        Math.cos(centerTheta) * Math.cos(centerPhi),
+        -Math.sin(centerTheta),
+        Math.cos(centerTheta) * Math.sin(centerPhi)
+      ];
+      
+      // 计算第二个正交向量 (沿着纬度方向的切线)
+      var tangent2 = [
+        -Math.sin(centerPhi),
+        0,
+        Math.cos(centerPhi)
+      ];
+      
+      // 中心点
+      bacteriaVertices.push(centerCartesian[0], centerCartesian[1], centerCartesian[2]);
+      bacteriaColors.push(color[0], color[1], color[2]);
+      
+      // 边缘点
+      var segments = 48; // 增加分段数以获得更平滑的圆形
+      for (var j = 0; j <= segments; j++) {
+        var angle = j * (2 * Math.PI / segments);
+        var cosAngle = Math.cos(angle);
+        var sinAngle = Math.sin(angle);
+        
+        // 计算切平面上的点
+        var pointX = centerCartesian[0] + size * (tangent1[0] * cosAngle + tangent2[0] * sinAngle);
+        var pointY = centerCartesian[1] + size * (tangent1[1] * cosAngle + tangent2[1] * sinAngle);
+        var pointZ = centerCartesian[2] + size * (tangent1[2] * cosAngle + tangent2[2] * sinAngle);
+        
+        // 将点投影回球面 (归一化)
+        var length = Math.sqrt(pointX*pointX + pointY*pointY + pointZ*pointZ);
+        pointX = (SPHERE_RADIUS + 0.01) * pointX / length;
+        pointY = (SPHERE_RADIUS + 0.01) * pointY / length;
+        pointZ = (SPHERE_RADIUS + 0.01) * pointZ / length;
+        
+        bacteriaVertices.push(pointX, pointY, pointZ);
+        bacteriaColors.push(color[0], color[1], color[2]);
+        
+        // 添加索引来形成三角形
+        if (j < segments) {
+          bacteriaIndices.push(
+            0, // 中心点
+            j + 1, // 当前边缘点
+            j + 2  // 下一个边缘点
+          );
+        } else {
+          // 最后一个三角形连接回第一个点
+          bacteriaIndices.push(
+            0, // 中心点
+            segments + 1, // 最后一个边缘点
+            1  // 第一个边缘点
+          );
+        }
+      }
+      
+      // 创建和绑定顶点缓冲区
+      var bacteriaVertexBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, bacteriaVertexBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(bacteriaVertices), gl.STATIC_DRAW);
+      
+      var a_Position = gl.getAttribLocation(gl.program, 'position');
+      gl.vertexAttribPointer(a_Position, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(a_Position);
+      
+      // 创建和绑定颜色缓冲区
+      var bacteriaColorBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, bacteriaColorBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(bacteriaColors), gl.STATIC_DRAW);
+      
+      var a_Color = gl.getAttribLocation(gl.program, 'color');
+      gl.vertexAttribPointer(a_Color, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(a_Color);
+      
+      // 创建和绑定索引缓冲区
+      var bacteriaIndexBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bacteriaIndexBuffer);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(bacteriaIndices), gl.STATIC_DRAW);
+      
+      // 绘制细菌
+      gl.drawElements(gl.TRIANGLES, bacteriaIndices.length, gl.UNSIGNED_SHORT, 0);
+      
+      // 释放缓冲区
+      gl.deleteBuffer(bacteriaVertexBuffer);
+      gl.deleteBuffer(bacteriaColorBuffer);
+      gl.deleteBuffer(bacteriaIndexBuffer);
+    }
+  }
+  
+  // 重新启用深度测试
+  gl.enable(gl.DEPTH_TEST);
+}
+
 // Animation function called for each frame
 function tick() {
+  // 随机生成新细菌 (低概率)
+  if (Math.random() < bacteriaGenProbability && bacteria.length < maxBacteriaCount) {
+    createNewBacterium();
+  }
+  
+  // 更新细菌状态
+  updateBacteria();
+  
   // Request next animation frame
   requestAnimationFrame(tick);
   
@@ -350,8 +553,22 @@ function draw() {
   gl.uniformMatrix4fv(_Vmatrix, false, viewMatrix.elements);
   gl.uniformMatrix4fv(_Mmatrix, false, modelMatrix.elements);
   
-  // Draw the sphere
+  // 首先绘制球体
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+  var a_Position = gl.getAttribLocation(gl.program, 'position');
+  gl.vertexAttribPointer(a_Position, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(a_Position);
+  
+  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+  var a_Color = gl.getAttribLocation(gl.program, 'color');
+  gl.vertexAttribPointer(a_Color, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(a_Color);
+  
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
   gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
+  
+  // 然后绘制细菌
+  drawBacteria();
 }
 
 // Call main function when the page is loaded
