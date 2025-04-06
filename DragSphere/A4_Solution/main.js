@@ -49,6 +49,10 @@ var maxBacteriaCount = 10; // 最大细菌数量
 var bacteriaGrowthSpeed = 0.002; // 细菌生长速度 (弧度/帧)
 var bacteriaMaxSize = Math.PI/6; // 细菌最大尺寸 (30度弧对应的弧度)
 var bacteriaGenProbability = 0.01; // 每帧生成新细菌的概率
+var totalBacteriaGenerated = 0; // 已生成的细菌总数
+
+// 点击检测相关变量
+var pendingClick = null;
 
 // Debug helper function
 function logError(message) {
@@ -303,6 +307,18 @@ function initEventHandlers() {
   };
   
   canvas.onmouseup = function(ev) {
+    // 如果拖动时间很短，可以认为是点击
+    if (dragging && Math.abs(ev.clientX - lastX) < 5 && Math.abs(ev.clientY - lastY) < 5) {
+      var x = ev.clientX, y = ev.clientY;
+      var rect = ev.target.getBoundingClientRect();
+      
+      // 转换为canvas坐标
+      var canvasX = x - rect.left;
+      var canvasY = y - rect.top;
+      
+      // 设置待处理的点击
+      checkAndKillBacteria(canvasX, canvasY);
+    }
     dragging = false;
   };
   
@@ -327,6 +343,58 @@ function initEventHandlers() {
   canvas.onmouseleave = function(ev) {
     dragging = false;
   };
+  
+  // 添加单击事件处理
+  canvas.onclick = function(ev) {
+    var x = ev.clientX, y = ev.clientY;
+    var rect = ev.target.getBoundingClientRect();
+    
+    // 转换为canvas坐标
+    var canvasX = x - rect.left;
+    var canvasY = y - rect.top;
+    
+    // 设置待处理的点击
+    checkAndKillBacteria(canvasX, canvasY);
+  };
+}
+
+// 检测点击并设置待处理的点击
+function checkAndKillBacteria(x, y) {
+  console.log("点击位置:", x, y);
+  
+  // 注意：WebGL中y坐标是从底部向上的，而canvas是从顶部向下的
+  var flippedY = canvas.height - y;
+  
+  // 设置待处理的点击
+  pendingClick = {x: x, y: flippedY};
+}
+
+// 处理细菌点击
+function processBacteriaClick(pixels) {
+  // 检查点击的颜色是否匹配任何细菌的颜色
+  for (var i = 0; i < bacteria.length; i++) {
+    if (bacteria[i].active) {
+      // 将细菌颜色从[0,1]转换为[0,255]
+      var bacteriaColor = [
+        Math.round(bacteria[i].color[0] * 255),
+        Math.round(bacteria[i].color[1] * 255),
+        Math.round(bacteria[i].color[2] * 255)
+      ];
+      
+      // 允许一定的颜色偏差（因为渲染和读取过程可能有误差）
+      var colorTolerance = 30;
+      if (Math.abs(bacteriaColor[0] - pixels[0]) < colorTolerance &&
+          Math.abs(bacteriaColor[1] - pixels[1]) < colorTolerance &&
+          Math.abs(bacteriaColor[2] - pixels[2]) < colorTolerance) {
+        // 找到匹配的细菌，将其标记为不活跃
+        console.log("消灭细菌:", i, bacteriaColor);
+        bacteria[i].active = false;
+        return;
+      }
+    }
+  }
+  
+  console.log("未点击到任何细菌");
 }
 
 // 细菌对象构造函数
@@ -356,11 +424,13 @@ function getRandomSpherePosition() {
 
 // 创建新细菌
 function createNewBacterium() {
-  if (bacteria.length < maxBacteriaCount) {
+  // 检查总共生成的细菌数量是否已达到最大值
+  if (totalBacteriaGenerated < maxBacteriaCount) {
     var position = getRandomSpherePosition();
     var color = getRandomColor();
     bacteria.push(new Bacterium(position, color));
-    console.log("创建新细菌，位置:", position, "颜色:", color);
+    totalBacteriaGenerated++; // 增加已生成细菌的计数
+    console.log("创建新细菌，位置:", position, "颜色:", color, "已生成总数:", totalBacteriaGenerated);
   }
 }
 
@@ -515,13 +585,18 @@ function drawBacteria() {
 
 // Animation function called for each frame
 function tick() {
-  // 随机生成新细菌 (低概率)
-  if (Math.random() < bacteriaGenProbability && bacteria.length < maxBacteriaCount) {
+  // 随机生成新细菌 (低概率)，并且检查总共生成的数量是否达到上限
+  if (Math.random() < bacteriaGenProbability && totalBacteriaGenerated < maxBacteriaCount) {
     createNewBacterium();
   }
   
   // 更新细菌状态
   updateBacteria();
+  
+  // 移除不活跃的细菌
+  bacteria = bacteria.filter(function(bacterium) {
+    return bacterium.active;
+  });
   
   // Request next animation frame
   requestAnimationFrame(tick);
@@ -569,6 +644,23 @@ function draw() {
   
   // 然后绘制细菌
   drawBacteria();
+  
+  // 如果有待处理的点击，现在处理它
+  if (pendingClick) {
+    // 创建缓冲区来存储像素数据
+    var pixels = new Uint8Array(4);
+    
+    // 读取点击位置的像素颜色
+    gl.readPixels(pendingClick.x, pendingClick.y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    
+    console.log("读取的颜色:", pixels);
+    
+    // 处理点击
+    processBacteriaClick(pixels);
+    
+    // 清除待处理的点击
+    pendingClick = null;
+  }
 }
 
 // Call main function when the page is loaded
